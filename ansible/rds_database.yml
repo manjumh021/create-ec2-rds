@@ -1,0 +1,44 @@
+---
+- name: Provision RDS MySQL instance
+  hosts: web_servers
+  become: true
+  vars:
+    rds_instance_identifier: <rds_instance_identifier>
+    rds_username: <rds_username>
+    rds_password: <rds_password>
+    security_group_name: <security_group_name>
+    ec2_security_group_id: <ec2_security_group_id>
+    aws_region: your_aws_region
+
+  tasks:
+    - name: Get EC2 Security Group ID
+      ec2_instance_info:
+        instance_ids: "{{ ansible_play_hosts_all }}"
+        region: "{{ aws_region }}"
+      register: ec2_info
+
+    - name: Allow incoming traffic on port 3306 from EC2 Security Group
+      ec2_group:
+        name: "{{ security_group_name }}"
+        rules:
+          - proto: tcp
+            from_port: 3306
+            to_port: 3306
+            src_group: "{{ ec2_info.instances[0].group_ids[0] }}"
+        region: "{{ aws_region }}"
+
+    - name: Create RDS instance
+      rds:
+        command: create
+        instance_name: "{{ rds_instance_identifier }}"
+        db_engine: MySQL
+        size: 5
+        instance_class: db.t2.micro
+        master_username: "{{ rds_username }}"
+        master_password: "{{ rds_password }}"
+        vpc_security_groups: "{{ security_group_name }}"
+        publicly_accessible: no
+        wait: yes
+      register: rds_instance
+
+
