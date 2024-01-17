@@ -1,44 +1,54 @@
 ---
 - name: Provision RDS MySQL instance
   hosts: web_servers
+  gather_facts: true
   become: true
+  connection: local
   vars:
-    rds_instance_identifier: <rds_instance_identifier>
-    rds_username: <rds_username>
-    rds_password: <rds_password>
-    security_group_name: <security_group_name>
-    ec2_security_group_id: <ec2_security_group_id>
-    aws_region: your_aws_region
+    rds_instance_identifier: new-database-testing
+    rds_username: admin
+    rds_password: abc123sdhs121
+    security_group: rds-user-sec-group
+    aws_region: us-east-1
+    aws_access_key_id: xxxxxxxxx
+    aws_secret_key: xxxxxx/xxxxxxx
+
 
   tasks:
-    - name: Get EC2 Security Group ID
-      ec2_instance_info:
-        instance_ids: "{{ ansible_play_hosts_all }}"
-        region: "{{ aws_region }}"
-      register: ec2_info
 
-    - name: Allow incoming traffic on port 3306 from EC2 Security Group
+    - name: Get the Public IP of EC2 instance
+      command: "aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --output text"
+      register: ec2_pub_ip
+
+    - name: Add DB rules to security group
       ec2_group:
-        name: "{{ security_group_name }}"
+        name: "{{ security_group }}"
+        region: "{{ aws_region }}"
+        description: testing rds
         rules:
           - proto: tcp
             from_port: 3306
             to_port: 3306
-            src_group: "{{ ec2_info.instances[0].group_ids[0] }}"
-        region: "{{ aws_region }}"
+            cidr_ip: "{{ ec2_pub_ip.stdout_lines[0] }}/32"
+            rule_desc: allow all on port 3306
 
-    - name: Create RDS instance
-      rds:
-        command: create
-        instance_name: "{{ rds_instance_identifier }}"
-        db_engine: MySQL
-        size: 5
-        instance_class: db.t2.micro
+    - name: Get the security group id
+      command: "aws ec2 describe-security-groups --group-names rds-user-sec-group --region us-east-1 --query 'SecurityGroups[0].GroupId' --output text"
+      register: security_group_id
+
+
+    - name: create RDS instance
+      rds_instance:
+        allocated_storage: 5
+        aws_access_key: "{{ aws_access_key_id }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        db_instance_class: db.t2.micro
+        db_instance_identifier: "{{ rds_instance_identifier }}"
+        db_name: "testing_db"
+        engine: mysql
+        master_user_password: "{{ rds_password }}"
         master_username: "{{ rds_username }}"
-        master_password: "{{ rds_password }}"
-        vpc_security_groups: "{{ security_group_name }}"
-        publicly_accessible: no
-        wait: yes
-      register: rds_instance
-
-
+        max_allocated_storage: 100
+        port: "3306"
+        region: "{{ aws_region }}"
+        vpc_security_group_ids: "{{ security_group_id.stdout_lines[0] }}"
