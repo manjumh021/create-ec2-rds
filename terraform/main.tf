@@ -1,13 +1,29 @@
 provider "aws" {
-  region = "your_aws_region"
+  region = "us-east-1"
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  owners = ["099720109477"] # Canonical
 }
 
 resource "aws_instance" "web_server" {
-  ami           = "ami-0c55b159cbfafe1f0"  # Ubuntu Server 20.04 LTS AMI
+  ami           = data.aws_ami.ubuntu.id
   instance_type = "t2.micro"
-  key_name      = "your_key_pair_name"
+  key_name      = "us-east-1-ansible-user-key1"
 
-  security_group = aws_security_group.web_sg.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
 
   tags = {
     Name = "web-server-instance"
@@ -40,9 +56,8 @@ resource "aws_db_instance" "rds_database" {
   engine                = "mysql"
   engine_version        = "5.7"
   instance_class        = "db.t2.micro"
-  name                  = "mydatabase"
   username              = "admin"
-  password              = "password"
+  password              = "password12345"
 
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 
@@ -61,6 +76,6 @@ resource "aws_security_group" "rds_sg" {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    security_group_names = [aws_security_group.web_sg.name]
+    cidr_blocks = [format("%s/32", aws_instance.web_server.private_ip)]
   }
 }
